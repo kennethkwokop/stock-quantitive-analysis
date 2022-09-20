@@ -1,0 +1,145 @@
+import requests
+import pandas as pd
+headers = {'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/11.1.2 Safari/605.1.15'}
+def get_screener(version):
+    screen= requests.get('https://finviz.com/screener.ashx?v=171&f=fa_salesqoq_o5,geo_usa,ind_stocksonly,sh_curvol_o50,sh_instown_o10,sh_price_o20,sh_relvol_o1.5,ta_highlow52w_b0to10h,ta_sma200_sb50,ta_sma50_pa&ft={version}',headers=headers).text
+    tables = pd.read_html(screen)
+    tables= tables[-2]
+    tables.columns=[tables.iloc[0,:]]
+    tables.drop(0,axis=0,inplace=True)
+    tables.drop('No.',axis=1,inplace=True)
+    stocklist=list(tables.iloc[:,0])
+    return stocklist
+
+list1=[4]+list(range(21,91,20))
+# stocklist=pd.DataFrame(columns=['Ticker'])
+stocklist=[]
+for i in list1:
+    stocklists=get_screener(i)
+    for j in stocklists:
+        stocklist.append(j)
+#         stocklist.append({'Ticker':j}, ignore_index=True)
+
+import datetime as dt
+import pandas as pd
+from pandas_datareader import data as pdr
+import yfinance as yf
+from tkinter import Tk
+from tkinter.filedialog import askopenfilename
+import os
+from pandas import ExcelWriter
+import talib
+
+yf.pdr_override() 
+start =dt.datetime(2020,1,1)
+now = dt.datetime.now()
+exportList= pd.DataFrame(columns=['Stock',"50 Day MA", "150 Day Ma", "200 Day MA", "52 Week Low", "52 week High"])
+
+for i in range(len(stocklist)):
+    stock= str(stocklist[i])
+    yf.pdr_override() 
+    df = pdr.get_data_yahoo(stock, start, now)
+    
+    smaUsed=[50,150,200]
+    for x in smaUsed:
+        sma=x
+        df["SMA_"+str(sma)]=round(df.iloc[:,4].rolling(window=sma).mean(),2)
+
+
+    currentClose=df["Adj Close"][-1]
+    moving_average_50=df["SMA_50"][-1]
+    moving_average_150=df["SMA_150"][-1]
+    moving_average_200=df["SMA_200"][-1]
+    low_of_52week=min(df["Adj Close"][-260:])
+    high_of_52week=max(df["Adj Close"][-260:])
+    tnm50=df['Volume'][-50:].mean()
+    vol=df['Volume'][-1]
+    df['will'] = talib.WILLR(df.High, df.Low, df.Close, timeperiod=14)
+    will=df['will'][-1]
+    will_p=df['will'][-2]
+    
+    try:
+        moving_average_200_20 = df["SMA_200"][-20]
+
+    except Exception:
+        moving_average_200_20=0
+
+    #Condition 1: Current Price > 150 SMA and > 200 SMA
+    if(currentClose>moving_average_150>moving_average_200):
+        cond_1=True
+    else:
+        cond_1=False
+    #Condition 2: 150 SMA and > 200 SMA
+    if(moving_average_150>moving_average_200):
+        cond_2=True
+    else:
+        cond_2=False
+    #Condition 3: 200 SMA trending up for at least 1 month (ideally 4-5 months)
+    if(moving_average_200>moving_average_200_20):
+        cond_3=True
+    else:
+        cond_3=False
+    #Condition 4: 50 SMA> 150 SMA and 50 SMA> 200 SMA
+    if(moving_average_50>moving_average_150>moving_average_200):
+        #print("Condition 4 met")
+        cond_4=True
+    else:
+        #print("Condition 4 not met")
+        cond_4=False
+    #Condition 5: Current Price > 50 SMA
+    if(currentClose>moving_average_50):
+        cond_5=True
+    else:
+        cond_5=False
+    #Condition 6: Current Price is at least 30% above 52 week low (Many of the best are up 100-300% before coming out of consolidation)
+    if(currentClose>=(1.3*low_of_52week)):
+        cond_6=True
+    else:
+        cond_6=False
+    #Condition 7: Current Price is within 25% of 52 week high
+    if(currentClose>=(.75*high_of_52week)):
+        cond_7=True
+    else:
+        cond_7=False
+        
+#     if(vol/tnm50>=1.5):
+#         cond_8=True
+#     else:
+#         cond_8=False
+        
+#     if (will>-95 and will<-70):
+#         cond_9=True
+#     else:
+#         cond_9=False
+
+#     if (will > will_p ):
+#         cond_10=True
+#     else:
+#         cond_10=False
+
+    if(cond_1 & cond_2 & cond_3 & cond_4 & cond_5 & cond_6 & cond_7):
+        exportList=exportList.append({'Stock': stock, "50 Day MA": moving_average_50, "150 Day Ma": moving_average_150, "200 Day MA": moving_average_200, "52 Week Low": low_of_52week, "52 week High": high_of_52week}, ignore_index=True)
+#     except Exception:
+#         print("No data on "+stock)
+        
+exportList.drop_duplicates(subset=['Stock'],inplace=True)
+print(exportList)
+
+# newFile=os.path.dirname(filePath)+"/ScreenOutput.xlsx"
+
+# writer= ExcelWriter(newFile)
+
+    Stock  50 Day MA  150 Day Ma  200 Day MA  52 Week Low  52 week High
+0    BRKR      80.12       78.35       74.69    49.088783     91.360001
+1     CCK     105.26      104.99      103.70    85.337273    113.099815
+2     CVA      20.15       18.58       17.42    11.431864     20.250000
+3    ENTA      74.88       57.16       55.53    41.020000     97.370003
+4    FFIC      23.48       22.66       22.38    13.133356     24.750000
+5   FWONA      50.95       45.02       43.80    35.529999     57.740002
+6    HCCI      31.95       30.20       29.52    19.270000     35.450001
+7    IRMD      36.59       33.17       30.96    22.299999     43.000000
+8     KAI     218.74      195.68      190.42   127.186073    240.000000
+9    MAIN      43.18       41.43       40.36    29.087046     46.590000
+10    MOV      35.17       32.38       30.69    13.631374     47.660000
+11   SITM     241.20      173.56      156.24    79.480003    300.980011
+12   WIRE     118.82       92.84       86.75    51.612919    147.979996
